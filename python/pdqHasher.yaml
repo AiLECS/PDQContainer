@@ -1,0 +1,24 @@
+swagger: "2.0"
+
+info:
+  title: "{{title}}"
+  version: "1.0"
+
+paths:
+  /pdq:
+    post:
+      description: "Upload a file for hashing"
+      operationId: "app.image_post"
+      consumes:
+        - multipart/form-data
+      produces:
+        - text/plain
+      parameters:
+        - name: file_to_upload
+          in: formData
+          description: The image file (e.g. jpg, png) to be uploaded
+          type: file
+          required: true
+      responses:
+        200:
+          description: Return PDQ hash value of uploaded image (picture) file
