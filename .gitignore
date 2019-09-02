@@ -1,2 +1,5 @@
 # Project exclude paths
 /venv/
+/python/hashsets/*.PDQ
+
+!/python/hashsets/ignorable.PDQ

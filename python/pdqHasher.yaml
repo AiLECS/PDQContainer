@@ -1,13 +1,61 @@
 swagger: "2.0"
 
 info:
-  title: "{{title}}"
+  title: PDQ Hasher Demo
+  description: Simple demo/POC of a PDQ microservice. Supports generation of PDQ hashes from uploaded files, plus searching against static lists of files in memory.
   version: "1.0"
+  contact:
+    name: Janis Dalins
+    email: janis.dalins@afp.gov.au
+
 
 paths:
   /pdq:
+    get:
+      summary: "Search for matches to PDQ hash (provided)"
+      operationId: "app.hash_search"
+      parameters:
+        - name: pdq
+          in: query
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          required: true
+          description: PDQ hash. If not known, upload file for search via post call
+        - $ref: '#/parameters/max'
+        - $ref: '#/parameters/fast'
+      produces:
+        - text/plain
+      responses:
+        200:
+          description: Return classes of potential matching images
     post:
-      description: "Upload a file for hashing"
+      summary: "Upload a file for search"
+      operationId: "app.image_search"
+      consumes:
+        - multipart/form-data
+      produces:
+        - application/json
+      parameters:
+        - name: file_to_upload
+          in: formData
+          description: The image file (e.g. jpg, png) to be uploaded
+          type: file
+          required: true
+        - $ref: '#/parameters/max'
+        - $ref: '#/parameters/fast'
+      responses:
+        200:
+          description: Return classes of potential matching images
+          schema:
+            type: object
+            properties:
+              results:
+                type: array
+                items:
+                  $ref: '#/definitions/Result'
+  /pdq/hash:
+    post:
+      summary: "Upload a file for hashing"
       operationId: "app.image_post"
       consumes:
         - multipart/form-data
@@ -22,3 +70,36 @@ paths:
       responses:
         200:
           description: Return PDQ hash value of uploaded image (picture) file
+
+parameters:
+  max:
+    name: max
+    in: query
+    type: integer
+    default: 30
+    minimum: 0
+    maximum: 256  #this is way too big!
+    required: false
+    description: Maximum hamming distance for match. Defaults to 30
+  fast:
+    name: fast
+    in: query
+    type: boolean
+    default: True
+    required: false
+    description: Only returns if any matching images found in classes. Won't attempt confidences.
+
+definitions:
+  Result:
+    type: object
+    required:
+      - category
+    properties:
+      category:
+        type: string
+        description: Class for matching/close matching result
+        example: Ignorable
+      confidence:
+        type: string
+        enum: [high, medium, low]
+        description: Confidence for match. returns High if Hamming Distance <= 30, medium <= 60, else, low.

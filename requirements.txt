@@ -4,3 +4,4 @@ flask==1.1.1
 connexion==2.3.0
 swagger-ui-bundle
 gevent
+bitarray

@@ -16,7 +16,7 @@ python3-pip
 # clone and build PDQ hashing cpp binaries
 RUN git clone https://github.com/facebook/ThreatExchange.git /facebook
 WORKDIR /facebook/hashing/pdq/cpp
-RUN make; exit 0
+RUN make
 
 # install python requirements
 COPY ./requirements.txt /app/requirements.txt
@@ -24,7 +24,7 @@ WORKDIR /app
 #RUN pip3 install -r requirements.txt
 RUN python3.7 /usr/bin/pip3 install -r requirements.txt
 
-COPY python/* /app/
+COPY python/ /app/
 
 EXPOSE 8080
 
