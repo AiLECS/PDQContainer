@@ -93,6 +93,7 @@ def createHash(buffer):
         try:
             image = Image.open(buffer)
             imagePath = os.path.join(tempDir, 'image.' + image.format)
+            # resize as per recommendation in PDQ hashing doc
             image.thumbnail((512, 512))
             image.save(imagePath)
             pdq, quality = runhasher(imagePath)
