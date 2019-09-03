@@ -25,9 +25,11 @@ def loadHashes(path):
                 subHashes = []
                 with open(os.path.join(root, f)) as fi:
                     for line in fi:
-                        b = bitarray()
-                        b.frombytes(bytes.fromhex(line))
-                        subHashes.append(b)
+                        if not line.startswith('#'):
+                            b = bitarray()
+                            b.frombytes(bytes.fromhex(line))
+                            if len(b) == 256:
+                                subHashes.append(b)
                 h[os.path.splitext(f)[0]] = subHashes
             else:
                 print('Skipping', f)
