@@ -13,11 +13,9 @@ hasher = None
 config = {}
 hashes = {}
 
-
 # Load PDQ hashes from files, convert to BitArray and keep in memory for querying.
 def loadHashes(path):
     h = {}
-    print('Traversing', os.path.abspath(path))
     for root, dirs, files in os.walk(path):
         for f in files:
             if os.path.splitext(f)[1].lower() == '.pdq':
@@ -40,7 +38,6 @@ def loadHashes(path):
 def runhasher(imagePath):
     try:
         global hasher
-        print(hasher)
         output = str(subprocess.run([hasher] + [imagePath], capture_output=True).stdout, 'utf-8').split(',')
         return output[0], output[1]
     except Exception as e:

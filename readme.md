@@ -40,6 +40,10 @@ To search for near matches to a file:
 ```Post``` a file (multipart - named ```file_to_upload``` to http://localhost:8080/pdq . An array of matches (refer swagger doc for specifications) is returned.
 
 ***
+ ### Licensing
+This is released under an MIT licence. External dependencies for the software in this project may be subject to more restrictive arrangements. 
+
+***
 
 ### Notes
 The current iteration uses linear search for lookups. This is not optimal, with 1.4M hashes taking around 4 seconds in a container, and around 2 natively.
