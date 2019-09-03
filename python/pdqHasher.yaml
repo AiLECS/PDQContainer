@@ -70,6 +70,8 @@ paths:
       responses:
         200:
           description: Return PDQ hash value of uploaded image (picture) file
+          schema:
+            $ref: '#/definitions/Result'
 
 parameters:
   max:
@@ -99,7 +101,31 @@ definitions:
         type: string
         description: Class for matching/close matching result
         example: Ignorable
+      hamming:
+        type: integer
+        description: Best (i.e. smallest) Hamming distance
+        example: 3
+      search:
+        type: string
+        enum: [full, incomplete]
+        description: Search level made for result. If incomplete, returns first hit for each category (i.e. there may be better matches)
+        example: full
       confidence:
         type: string
         enum: [high, medium, low]
         description: Confidence for match. returns High if Hamming Distance <= 30, medium <= 60, else, low.
+  HashGen:
+    type: object
+    required:
+      - hash
+      - quality
+    properties:
+      hash:
+        type: string
+        description: PDQ hash value (as hex string)
+        example: 331d70ccc7f3631998cc364ccb38734c99f2ce633db20ce26673939a4cf226b2
+        # pattern: "^[a-f0-9]{64}$"
+      quality:
+        type: integer
+        description: Image quality metric (max 100)
+        example: 100

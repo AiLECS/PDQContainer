@@ -35,18 +35,18 @@ def loadHashes(path):
                 print('Skipping', f)
     return h
 
-# returns each hash value provided for each unique file name
-def getHashes(output):
-    vals = {}
-    output = str(output, 'utf-8').splitlines()
-    for line in output:
-        v = line.split(',')
-        fn = os.path.splitext(os.path.basename(v[2]))[0]
-        if fn in vals:
-            vals[fn].append(v[0])
-        else:
-            vals[fn] = [v[0]]
-    return vals
+
+# returns PDQ and quality for one passed image file
+def runhasher(imagePath):
+    try:
+        global hasher
+        print(hasher)
+        output = str(subprocess.run([hasher] + [imagePath], capture_output=True).stdout, 'utf-8').split(',')
+        return output[0], output[1]
+    except Exception as e:
+        print(e)
+        logging.exception("Exception generating PDQ for " + imagePath)
+        return None, None
 
 
 # calculate hamming distances for provided hash
@@ -69,11 +69,10 @@ def lookupHash(pdqHash, maxDistance=30, fast=True):
                 elif k not in classes.keys() or (k in classes.keys() and classes[k] > hd):
                     classes[k] = hd
     results = []
+    searchTypes = ['full', 'incomplete']
     for k in classes.keys():
-        if fast:
-            results.append({'category': k})
-        else:
-            results.append({'category': k, 'confidence': getConfidence(classes[k])})
+        results.append({'category': k, 'confidence': getConfidence(classes[k]), 'hamming': classes[k],
+                        'search': searchTypes[fast is True]})
     return results
 
 
@@ -96,17 +95,15 @@ def createHash(buffer):
             imagePath = os.path.join(tempDir, 'image.' + image.format)
             image.thumbnail((512, 512))
             image.save(imagePath)
-            global hasher
-            print(hasher)
-            val = getHashes(subprocess.run([hasher] + [imagePath], capture_output=True).stdout)['image'][0]
+            pdq, quality = runhasher(imagePath)
             logging.info('Successfully calculated PDQ in ' + str(timer() - start) + ' seconds')
-            return val
+            return pdq, quality
         except IOError as e:
             print(e)
             logging.info('Failed to parse file as image')
         finally:
             os.unlink(imagePath)
-    return None
+    return None, None
 
 
 # Search for matches to PDQ, using default or provided Hamming Distance as threshold.
@@ -118,9 +115,9 @@ def hash_search(pdq, max=30, fast=True):
 # Search for matches, using uploaded file as source for PDQ
 def image_search(file_to_upload, max=30, fast=True):
     buffer = BytesIO(file_to_upload.read())
-    val = createHash(buffer)
-    if val is not None:
-        val = lookupHash(val, maxDistance=max, fast=fast)
+    pdq, quality = createHash(buffer)
+    if pdq is not None:
+        val = lookupHash(pdq, maxDistance=max, fast=fast)
         return val, 200
     else:
         return 'Unable to parse file as image', 400
@@ -130,9 +127,9 @@ def image_search(file_to_upload, max=30, fast=True):
 # Thumbnailing not strictly required, but used as step towards removing proprietary/licensed dependency in PDQ/TMK
 def image_post(file_to_upload):
     buffer = BytesIO(file_to_upload.read())
-    val = createHash(buffer)
-    if val is not None:
-        return val, 200
+    pdq, quality = createHash(buffer)
+    if pdq is not None:
+        return {'hash': pdq, 'quality': quality}, 200
     else:
         return 'Unable to parse file as image', 400
 
