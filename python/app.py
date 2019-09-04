@@ -8,10 +8,14 @@ import tempfile
 import logging
 from timeit import default_timer as timer
 from bitarray import bitarray
+import concurrent.futures
+import multiprocessing
+from math import ceil
 
 hasher = None
 config = {}
 hashes = {}
+workers = round(multiprocessing.cpu_count()/2)
 
 # Load PDQ hashes from files, convert to BitArray and keep in memory for querying.
 def loadHashes(path):
@@ -33,7 +37,6 @@ def loadHashes(path):
                 print('Skipping', f)
     return h
 
-
 # returns PDQ and quality for one passed image file
 def runhasher(imagePath):
     try:
@@ -44,6 +47,50 @@ def runhasher(imagePath):
         print(e)
         logging.exception("Exception generating PDQ for " + imagePath)
         return None, None
+
+
+# Check hamming distance - iterate through list
+def checkhamming(pdqHash, hashList, maxDistance, fast):
+    best = len(pdqHash)
+    for h in hashList:
+        hd = 0
+        for b1, b2 in zip(pdqHash, h):
+            if b1 != b2:
+                hd += 1
+                if hd > maxDistance:
+                    break
+        if hd < best:
+            best = hd
+            if fast and best <= maxDistance:
+                return best
+    if best <= maxDistance:
+        return best
+    return None
+
+# calculate hamming distances for provided hash
+def multithreadhashlookup(pdqHash, maxDistance=30, fast=True):
+    classes = {}
+    b = bitarray()
+    b.frombytes(bytes.fromhex(pdqHash))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        future_hammings = {executor.submit(checkhamming, b, hashes[category], maxDistance, fast): category for category in hashes.keys()}
+        for future in concurrent.futures.as_completed(future_hammings):
+            k = future_hammings[future]
+            hamming = future.result()
+            if hamming is not None:
+                if fast:
+                    classes[k] = hamming
+                    break
+                elif k not in classes.keys() or (k in classes.keys() and classes[k] > hamming):
+                    classes[k] = hamming
+
+    results = []
+    searchTypes = ['full', 'incomplete']
+    for k in classes.keys():
+        results.append({'category': k, 'confidence': getConfidence(classes[k]), 'hamming': classes[k],
+                        'search': searchTypes[fast is True]})
+    return results
 
 
 # calculate hamming distances for provided hash
@@ -106,7 +153,8 @@ def createHash(buffer):
 
 # Search for matches to PDQ, using default or provided Hamming Distance as threshold.
 def hash_search(pdq, max=30, fast=True):
-    val = lookupHash(pdq, maxDistance=max, fast=fast)
+    val = multithreadhashlookup(pdq, maxDistance=max, fast=fast)
+    # val = lookupHash(pdq, maxDistance=max, fast=fast)
     return val, 200
 
 
@@ -143,10 +191,15 @@ def startapp(port=8080):
 config = configparser.ConfigParser()
 config.read('config.ini')
 hashBinary = config['PDQ']['Hasher']
-
 hasher = hashBinary
+
 hashes = loadHashes(config['PDQ']['HashDirectory'])
 counter = 0
+
+if config.has_option('GENERAL', 'Workers'):
+    workers = int(config['GENERAL']['Workers'])
+else:
+    logging.info('No Worker count set. Defaulting to cpu count/2 ', workers)
 
 if __name__ == '__main__':
     for k in hashes.keys():
