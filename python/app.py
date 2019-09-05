@@ -7,19 +7,20 @@ import subprocess
 import tempfile
 import logging
 from timeit import default_timer as timer
-from bitarray import bitarray
-import concurrent.futures
 import multiprocessing
-from math import ceil
+from pyMIH import MIHIndex
+import functools
 
 hasher = None
 config = {}
-hashes = {}
+index = None
+maxHamming = None
 workers = round(multiprocessing.cpu_count()/2)
 
+
 # Load PDQ hashes from files, convert to BitArray and keep in memory for querying.
-def loadHashes(path):
-    h = {}
+def loadHashes(path, maxHamming):
+    x = MIHIndex()
     for root, dirs, files in os.walk(path):
         for f in files:
             if os.path.splitext(f)[1].lower() == '.pdq':
@@ -28,14 +29,14 @@ def loadHashes(path):
                 with open(os.path.join(root, f)) as fi:
                     for line in fi:
                         if not line.startswith('#'):
-                            b = bitarray()
-                            b.frombytes(bytes.fromhex(line))
-                            if len(b) == 256:
-                                subHashes.append(b)
-                h[os.path.splitext(f)[0]] = subHashes
+                            subHashes.append(line.strip())
+                x.update(subHashes, os.path.splitext(f)[0])
             else:
                 print('Skipping', f)
-    return h
+    print('Training index')
+    x.train(16, int(maxHamming))
+    print('Finished training index')
+    return x
 
 # returns PDQ and quality for one passed image file
 def runhasher(imagePath):
@@ -69,54 +70,40 @@ def checkhamming(pdqHash, hashList, maxDistance, fast):
 
 # calculate hamming distances for provided hash
 def multithreadhashlookup(pdqHash, maxDistance=30, fast=True):
-    classes = {}
-    b = bitarray()
-    b.frombytes(bytes.fromhex(pdqHash))
+    pass
+#    classes = {}
+#    b = bitarray()
+#    b.frombytes(bytes.fromhex(pdqHash))
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-        future_hammings = {executor.submit(checkhamming, b, hashes[category], maxDistance, fast): category for category in hashes.keys()}
-        for future in concurrent.futures.as_completed(future_hammings):
-            k = future_hammings[future]
-            hamming = future.result()
-            if hamming is not None:
-                if fast:
-                    classes[k] = hamming
-                    break
-                elif k not in classes.keys() or (k in classes.keys() and classes[k] > hamming):
-                    classes[k] = hamming
+#    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+#        future_hammings = {executor.submit(checkhamming, b, hashes[category], maxDistance, fast): category for category in hashes.keys()}
+#        for future in concurrent.futures.as_completed(future_hammings):
+##            hamming = future.result()
+ #           if hamming is not None:
+ #               if fast:
+ #                   classes[k] = hamming
+ #                   break
+ #               elif k not in classes.keys() or (k in classes.keys() and classes[k] > hamming):
+ #                   classes[k] = hamming
 
-    results = []
-    searchTypes = ['full', 'incomplete']
-    for k in classes.keys():
-        results.append({'category': k, 'confidence': getConfidence(classes[k]), 'hamming': classes[k],
-                        'search': searchTypes[fast is True]})
-    return results
+ #   results = []
+ #   searchTypes = ['full', 'incomplete']
+ #   for k in classes.keys():
+ #       results.append({'category': k, 'confidence': getConfidence(classes[k]), 'hamming': classes[k],
+ #                       'search': searchTypes[fast is True]})
+ #   return results
 
 
+@functools.lru_cache(maxsize=1048576)
 # calculate hamming distances for provided hash
-def lookupHash(pdqHash, maxDistance=30, fast=True):
-    classes = {}
-    b = bitarray()
-    b.frombytes(bytes.fromhex(pdqHash))
-    for k in hashes.keys():
-        for v in hashes[k]:
-            hd = 0
-            for b1, b2 in zip(b, v):
-                if b1 != b2:
-                    hd += 1
-                    if hd > maxDistance:
-                        break
-            if hd <= maxDistance:
-                if fast:
-                    classes[k] = hd
-                    break
-                elif k not in classes.keys() or (k in classes.keys() and classes[k] > hd):
-                    classes[k] = hd
-    results = []
+def lookupHash(pdqHash, maxDistance=32, fast=True):
+    if maxDistance > maxHamming:
+        return multithreadhashlookup()
+
     searchTypes = ['full', 'incomplete']
-    for k in classes.keys():
-        results.append({'category': k, 'confidence': getConfidence(classes[k]), 'hamming': classes[k],
-                        'search': searchTypes[fast is True]})
+    results = []
+    for p, cats, hamming in index.query(pdqHash):
+        results.append({'categories': cats, 'confidence': getConfidence(hamming), 'hamming': hamming, 'search': searchTypes[fast is True]})
     return results
 
 
@@ -128,7 +115,6 @@ def getConfidence(hd):
         return 'medium'
     else:
         return 'low'
-
 
 #create PDQ hash from image passed in buffer
 def createHash(buffer):
@@ -153,8 +139,8 @@ def createHash(buffer):
 
 # Search for matches to PDQ, using default or provided Hamming Distance as threshold.
 def hash_search(pdq, max=30, fast=True):
-    val = multithreadhashlookup(pdq, maxDistance=max, fast=fast)
-    # val = lookupHash(pdq, maxDistance=max, fast=fast)
+    # val = multithreadhashlookup(pdq, maxDistance=max, fast=fast)
+    val = lookupHash(pdq, maxDistance=max, fast=fast)
     return val, 200
 
 
@@ -193,7 +179,9 @@ config.read('config.ini')
 hashBinary = config['PDQ']['Hasher']
 hasher = hashBinary
 
-hashes = loadHashes(config['PDQ']['HashDirectory'])
+maxHamming = int(config['PDQ']['MaxHamming'])
+if index is None:
+    index = loadHashes(config['PDQ']['HashDirectory'], config['PDQ']['MaxHamming'])
 counter = 0
 
 if config.has_option('GENERAL', 'Workers'):
@@ -202,11 +190,6 @@ else:
     logging.info('No Worker count set. Defaulting to cpu count/2 ', workers)
 
 if __name__ == '__main__':
-    for k in hashes.keys():
-        print(len(hashes[k]), 'hashes loaded for', k)
-        logging.info(len(hashes[k]), 'hashes loaded for', k)
-        counter += len(hashes[k])
-    print(counter, 'total hashes loaded for', len(hashes.keys()), 'classes')
     print('Booting. Using PDQ hasher located at', hasher)
     startapp(port=int(config['NETWORK']['Port']))
     logging.info('Exiting.')

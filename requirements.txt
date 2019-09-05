@@ -5,3 +5,4 @@ connexion==2.3.0
 swagger-ui-bundle
 gevent
 bitarray
+pyMIH
