@@ -6,37 +6,39 @@ import os
 import subprocess
 import tempfile
 import logging
-from timeit import default_timer as timer
-import multiprocessing
 from pyMIH import MIHIndex
-import functools
+from timeit import default_timer as timer
 
 hasher = None
 config = {}
 index = None
+hashes = None
 maxHamming = None
-workers = round(multiprocessing.cpu_count()/2)
-
 
 # Load PDQ hashes from files, convert to BitArray and keep in memory for querying.
 def loadHashes(path, maxHamming):
     x = MIHIndex()
+    hashes = {}
     for root, dirs, files in os.walk(path):
         for f in files:
             if os.path.splitext(f)[1].lower() == '.pdq':
                 print('Reading from', f)
-                subHashes = []
+                subHashes = set()
                 with open(os.path.join(root, f)) as fi:
                     for line in fi:
                         if not line.startswith('#'):
-                            subHashes.append(line.strip())
+                            subHashes.add(line.strip())
+                            if line.strip() not in hashes.keys():
+                                hashes[line.strip()] = [os.path.splitext(f)[0]]
+                            else:
+                                hashes[line.strip()].append(os.path.splitext(f)[0])
                 x.update(subHashes, os.path.splitext(f)[0])
             else:
                 print('Skipping', f)
     print('Training index')
     x.train(16, int(maxHamming))
     print('Finished training index')
-    return x
+    return x, hashes
 
 # returns PDQ and quality for one passed image file
 def runhasher(imagePath):
@@ -50,60 +52,25 @@ def runhasher(imagePath):
         return None, None
 
 
-# Check hamming distance - iterate through list
-def checkhamming(pdqHash, hashList, maxDistance, fast):
-    best = len(pdqHash)
-    for h in hashList:
-        hd = 0
-        for b1, b2 in zip(pdqHash, h):
-            if b1 != b2:
-                hd += 1
-                if hd > maxDistance:
-                    break
-        if hd < best:
-            best = hd
-            if fast and best <= maxDistance:
-                return best
-    if best <= maxDistance:
-        return best
-    return None
-
-# calculate hamming distances for provided hash
-def multithreadhashlookup(pdqHash, maxDistance=30, fast=True):
-    pass
-#    classes = {}
-#    b = bitarray()
-#    b.frombytes(bytes.fromhex(pdqHash))
-
-#    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
-#        future_hammings = {executor.submit(checkhamming, b, hashes[category], maxDistance, fast): category for category in hashes.keys()}
-#        for future in concurrent.futures.as_completed(future_hammings):
-##            hamming = future.result()
- #           if hamming is not None:
- #               if fast:
- #                   classes[k] = hamming
- #                   break
- #               elif k not in classes.keys() or (k in classes.keys() and classes[k] > hamming):
- #                   classes[k] = hamming
-
- #   results = []
- #   searchTypes = ['full', 'incomplete']
- #   for k in classes.keys():
- #       results.append({'category': k, 'confidence': getConfidence(classes[k]), 'hamming': classes[k],
- #                       'search': searchTypes[fast is True]})
- #   return results
+# Lookup hashes within internally mapped memory
+def linearhashlookup(pdqHash, maxDistance=30):
+    for value, categories in hashes.items():
+        hd = MIHIndex.gethamming(pdqHash, value, maxDistance)
+        if hd is not None:
+            yield pdqHash, categories, hd
 
 
-@functools.lru_cache(maxsize=1048576)
-# calculate hamming distances for provided hash
-def lookupHash(pdqHash, maxDistance=32, fast=True):
-    if maxDistance > maxHamming:
-        return multithreadhashlookup()
-
-    searchTypes = ['full', 'incomplete']
+# Search for hash value
+def lookupHash(pdqHash, maxDistance=32):
     results = []
-    for p, cats, hamming in index.query(pdqHash):
-        results.append({'categories': cats, 'confidence': getConfidence(hamming), 'hamming': hamming, 'search': searchTypes[fast is True]})
+    if maxDistance > maxHamming:
+        for p, cats, hamming in linearhashlookup(pdqHash, maxDistance):
+            if hamming <= maxDistance:
+                results.append({'pdq': p, 'categories': cats, 'confidence': getConfidence(hamming), 'hamming': hamming})
+    elif maxDistance <= maxHamming:
+        for p, cats, hamming in index.query(pdqHash):
+            if hamming <= maxDistance:
+                results.append({'pdq': p, 'categories': cats, 'confidence': getConfidence(hamming), 'hamming': hamming})
     return results
 
 
@@ -118,7 +85,6 @@ def getConfidence(hd):
 
 #create PDQ hash from image passed in buffer
 def createHash(buffer):
-    start = timer()
     with tempfile.TemporaryDirectory() as tempDir:
         try:
             image = Image.open(buffer)
@@ -127,7 +93,6 @@ def createHash(buffer):
             image.thumbnail((512, 512))
             image.save(imagePath)
             pdq, quality = runhasher(imagePath)
-            logging.info('Successfully calculated PDQ in ' + str(timer() - start) + ' seconds')
             return pdq, quality
         except IOError as e:
             print(e)
@@ -138,19 +103,20 @@ def createHash(buffer):
 
 
 # Search for matches to PDQ, using default or provided Hamming Distance as threshold.
-def hash_search(pdq, max=30, fast=True):
-    # val = multithreadhashlookup(pdq, maxDistance=max, fast=fast)
-    val = lookupHash(pdq, maxDistance=max, fast=fast)
+def hash_search(pdq, max=30):
+    try:
+        val = lookupHash(pdq, maxDistance=max)
+    except ValueError as e:
+        return 'Submitted hamming distance too high. ', 400
     return val, 200
 
 
 # Search for matches, using uploaded file as source for PDQ
-def image_search(file_to_upload, max=30, fast=True):
+def image_search(file_to_upload, max=30):
     buffer = BytesIO(file_to_upload.read())
     pdq, quality = createHash(buffer)
     if pdq is not None:
-        val = lookupHash(pdq, maxDistance=max, fast=fast)
-        return val, 200
+        return hash_search(pdq, max)
     else:
         return 'Unable to parse file as image', 400
 
@@ -181,13 +147,8 @@ hasher = hashBinary
 
 maxHamming = int(config['PDQ']['MaxHamming'])
 if index is None:
-    index = loadHashes(config['PDQ']['HashDirectory'], config['PDQ']['MaxHamming'])
+    index, hashes = loadHashes(config['PDQ']['HashDirectory'], config['PDQ']['MaxHamming'])
 counter = 0
-
-if config.has_option('GENERAL', 'Workers'):
-    workers = int(config['GENERAL']['Workers'])
-else:
-    logging.info('No Worker count set. Defaulting to cpu count/2 ', workers)
 
 if __name__ == '__main__':
     print('Booting. Using PDQ hasher located at', hasher)

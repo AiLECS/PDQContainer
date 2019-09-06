@@ -46,6 +46,5 @@ This is released under an MIT licence. External dependencies for the software in
 ***
 
 ### Notes
-The current iteration uses linear search for lookups. This is not optimal, with 1.4M hashes taking around 4 seconds in a container, and around 2 natively.
-
-Next release aims to incorporate an indexing engine for performance, with a minor performance (storage) tradeoff.
+The service utilises [MIH](https://github.com/AiLECS/pyMIH) for accelerating lookups within the configured hamming distance. Otherwise, it uses linear search.
+You *will* encounter performance drops with linear search, particularly as your dataset grows!

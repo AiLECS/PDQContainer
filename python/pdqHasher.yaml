@@ -22,7 +22,6 @@ paths:
           required: true
           description: PDQ hash. If not known, upload file for search via post call
         - $ref: '#/parameters/max'
-        - $ref: '#/parameters/fast'
       produces:
         - text/plain
       responses:
@@ -42,7 +41,6 @@ paths:
           type: file
           required: true
         - $ref: '#/parameters/max'
-        - $ref: '#/parameters/fast'
       responses:
         200:
           description: Return classes of potential matching images
@@ -83,13 +81,6 @@ parameters:
     maximum: 256  #this is way too big!
     required: false
     description: Maximum hamming distance for match. Defaults to 30
-  fast:
-    name: fast
-    in: query
-    type: boolean
-    default: True
-    required: false
-    description: Only returns if any matching images found in classes. Won't attempt confidences.
 
 definitions:
   Result:
