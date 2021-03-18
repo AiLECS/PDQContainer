@@ -4,6 +4,7 @@
 This project hosts an implementation of Facebook's [PDQ](https://github.com/facebook/ThreatExchange/tree/master/hashing/pdq), 
 a perceptual hashing algorithm used for measuring image similarity. A summary of the algorithm is available [here](https://github.com/facebook/ThreatExchange/blob/master/hashing/hashing.pdf).
 
+Please note this is a reference implementation, and is _not_ recommended for use in production systems. 
 *** 
 ### Setup 
 Clone/download this project, and build the image:

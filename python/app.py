@@ -15,6 +15,7 @@ index = None
 hashes = None
 maxHamming = None
 
+
 # Load PDQ hashes from files, convert to BitArray and keep in memory for querying.
 def loadHashes(path, maxHamming):
     x = MIHIndex()
@@ -39,6 +40,7 @@ def loadHashes(path, maxHamming):
     x.train(16, int(maxHamming))
     print('Finished training index')
     return x, hashes
+
 
 # returns PDQ and quality for one passed image file
 def runhasher(imagePath):
