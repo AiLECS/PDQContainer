@@ -1,6 +1,6 @@
 python-magic==0.4.18
 Pillow~=8.0.1
-flask==1.1.2
+flask==2.3.2
 connexion==2.7.0
 swagger-ui-bundle
 gevent
